@@ -26,6 +26,7 @@ Instructions can be found in [INSTALL.md](docs/INSTALL.md).
 
 
 ## Inference
+Create a folder `demo_images` inside the project directory and move your testing image into it, e.g., GAS/demo_images/image.png. 
 ### Novel view synthesis
 ```
 bash demo_scripts/nv.sh
