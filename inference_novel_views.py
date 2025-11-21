@@ -13,7 +13,7 @@ warnings.filterwarnings(
     message=".*torch.library.impl_abstract.*",
     category=FutureWarning,
 )
-
+from tqdm import tqdm
 import numpy as np
 import torch
 import torch.utils.checkpoint
@@ -213,71 +213,56 @@ def main(cfg):
             raise ValueError(
                 "xformers is not available. Make sure it is installed correctly"
             )
-    quit()
 
     to_tensor = transforms.ToTensor()
-    img_name = os.path.basename(img_path).split(".")[0]
-    normal_folder = cfg.normal_map_folder
-    nerf_folder = cfg.gs_render_folder
-    all_subjects = [img_name]
+    normal_dir = Path(cfg.normal_map_folder)
+    nerf_dir = Path(cfg.gs_render_folder)
 
-    for subject in all_subjects:
+    smpl_vidpil_lst = []
+    nerf_vidpil_lst = []
 
-        nerf_dir = os.path.join(nerf_folder, subject)
-        normal_dir = os.path.join(normal_folder, subject)
+    for cam_name in tqdm(range(1, cfg.data.video_length + 1), desc="Loading input frames", total=cfg.data.video_length):
+        # SMPL normal condition
+        cam_name = f"cam_{cam_name}"
+        smpl_image_path = normal_dir / cam_name / f'{cfg.frame_number:04d}.png'
+        smpl_img_pil = Image.open(smpl_image_path)
+        smpl_vidpil_lst.append(to_tensor(smpl_img_pil))
 
-        obs_img_path = img_path
-        obs_img_mask_path = os.path.join(os.path.dirname(img_path), "groundsam_vis", f"{img_name}.png.mask.png")
-
-        obs_img_pil = Image.open(obs_img_path)
-        obs_img_pil = apply_mask(obs_img_pil, obs_img_mask_path)
-
-        smpl_vidpil_lst = []
-        nerf_vidpil_lst = []
-
-        camera_trajectory = list(range(20))
-        for _, cam_name in enumerate(camera_trajectory):
-            # SMPL normal condition
-            cam_name = str(cam_name).zfill(2)
-            smpl_image_path = os.path.join(normal_dir, 'normal', str(cam_name).zfill(2), f'{img_name}.png')
-            smpl_img_pil = Image.open(smpl_image_path)
-            smpl_vidpil_lst.append(to_tensor(smpl_img_pil))
-
-            # NeRF rendering condition
-            nerf_img_path = os.path.join(nerf_dir, f'pose_0000_view_{str(cam_name).zfill(4)}.png')
-            nerf_img = Image.open(nerf_img_path)
-            nerf_vidpil_lst.append(to_tensor(nerf_img))
+        # NeRF rendering condition
+        nerf_img_path = nerf_dir / cam_name / f'{cfg.frame_number:04d}.png'
+        nerf_img = Image.open(nerf_img_path)
+        nerf_vidpil_lst.append(to_tensor(nerf_img))
 
 
-        video_length = cfg.data.video_length
-        smpl_vid = torch.stack(smpl_vidpil_lst, dim=0)
-        nerf_vid = torch.stack(nerf_vidpil_lst, dim=0)
+    video_length = cfg.data.video_length
+    smpl_vid = torch.stack(smpl_vidpil_lst, dim=0)
+    nerf_vid = torch.stack(nerf_vidpil_lst, dim=0)
 
-        result_video_tensor = inference(
-            cfg=cfg,
-            vae=vae,
-            image_enc=image_enc,
-            model=model,
-            smpl_vidpil_lst=smpl_vid,
-            nerf_vidpil_lst=nerf_vid,
-            obs_img=obs_img_pil, 
-            video_length=video_length,
-            width=cfg.width,
-            height=cfg.height,
-            device="cuda",
-            dtype=weight_dtype,
-        )
+    result_video_tensor = inference(
+        cfg=cfg,
+        vae=vae,
+        image_enc=image_enc,
+        model=model,
+        smpl_vidpil_lst=smpl_vid,
+        nerf_vidpil_lst=nerf_vid,
+        obs_img=..., # TODO: this - provide the original frame as reference or should i provide all gt frames?
+        video_length=video_length,
+        width=cfg.width,
+        height=cfg.height,
+        device="cuda",
+        dtype=weight_dtype,
+    )
 
-        result_video_tensor = result_video_tensor[None, ...]
-        result_video_tensor = rearrange(result_video_tensor, 'b f c h w -> b c f h w')
+    result_video_tensor = result_video_tensor[None, ...]
+    result_video_tensor = rearrange(result_video_tensor, 'b f c h w -> b c f h w')
 
-        obs_video_tensor = to_tensor(obs_img_pil)[None, :, None, ...].repeat(
-            1, 1, video_length, 1, 1
-        )
+    obs_video_tensor = to_tensor(obs_img_pil)[None, :, None, ...].repeat(
+        1, 1, video_length, 1, 1
+    )
 
 
-        grid_video = torch.cat([obs_video_tensor, result_video_tensor], dim=0)
-        save_videos_grid(grid_video, osp.join(save_dir, f"subject_{subject}_grid.mp4"), fps=12)
+    grid_video = torch.cat([obs_video_tensor, result_video_tensor], dim=0)
+    save_videos_grid(grid_video, osp.join(save_dir, f"subject_{subject}_grid.mp4"), fps=12)
         
     logging.info(f"Inference completed, results saved in {save_dir}")
 

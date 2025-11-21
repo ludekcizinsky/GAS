@@ -1,5 +1,6 @@
 # real world data multiview
 
+frame_number: ???
 exp_name: taichi
 width: 960
 height: 540
@@ -10,8 +11,6 @@ data:
 
 
 seed: 42
-
-
 ckpt_dir: /scratch/izar/cizinsky/pretrained/GAS
 svd_base_path: /scratch/izar/cizinsky/pretrained/stable-video-diffusion-img2vid-xt-1-1
 unet_path: ${svd_base_path}/unet
@@ -19,8 +18,8 @@ vae_model_path:  ${svd_base_path}/vae
 image_encoder_path: ${svd_base_path}/image_encoder
 scheduler_path: ${svd_base_path}/scheduler
 
-normal_map_folder: ???
-gs_render_folder: ???
+normal_map_folder: /scratch/izar/cizinsky/thesis/playground_output/${exp_name}/normals
+gs_render_folder: /scratch/izar/cizinsky/thesis/playground_output/${exp_name}/rgb
 output_folder: "/scratch/izar/cizinsky/thesis/playground_output/gas"
 
 num_inference_steps: 25
