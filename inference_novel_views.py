@@ -1,9 +1,18 @@
-import argparse
+import warnings
 import logging
 import os
 import os.path as osp
 from datetime import datetime
 from pathlib import Path
+import hydra
+os.environ["TORCH_HOME"] = "/scratch/izar/cizinsky/.cache"
+os.environ["HF_HOME"] = "/scratch/izar/cizinsky/.cache"
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*torch.library.impl_abstract.*",
+    category=FutureWarning,
+)
 
 import numpy as np
 import torch
@@ -29,15 +38,11 @@ from pipelines.pipeline_gas import GASPipeline as StableVideoDiffusionPipeline
 # utils
 from utils.video_utils import save_videos_grid
 
-
+logging.getLogger("diffusers").setLevel(logging.ERROR)  # hides the “Some weights … newly initialized” notice
 
 def setup_savedir(cfg):
     time_str = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    if cfg.exp_name is None:
-        savedir = f"results/exp-{time_str}"
-    else:
-        savedir = f"results/{cfg.exp_name}-{time_str}"
-
+    savedir = f"{cfg.output_folder}/{cfg.exp_name}-{time_str}"
     os.makedirs(savedir, exist_ok=True)
 
     return savedir
@@ -135,8 +140,10 @@ def inference(
 
     return _video_frames
     
+    
 
-def main(cfg, img_path):
+@hydra.main(config_path="configs/inference", config_name="novel_views", version_base=None)
+def main(cfg):
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -175,12 +182,14 @@ def main(cfg, img_path):
         torch.load(
             os.path.join(ckpt_dir, f'unet.pth'),
             map_location="cpu",
+            weights_only=True,
         ),
     )
     pose_net.load_state_dict(
         torch.load(
             os.path.join(ckpt_dir, f'pose_net.pth'),
             map_location="cpu",
+            weights_only=True,
         ),
     )
 
@@ -188,6 +197,7 @@ def main(cfg, img_path):
         torch.load(
             os.path.join(ckpt_dir, f'nerf_net.pth'),
             map_location="cpu",
+            weights_only=True,
         ),
     )
     model = GASModel(
@@ -196,18 +206,19 @@ def main(cfg, img_path):
         nerf_net,
     ).cuda() 
 
-    if cfg.solver.enable_xformers_memory_efficient_attention:
+    if cfg.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
             denoising_unet.enable_xformers_memory_efficient_attention()
         else:
             raise ValueError(
                 "xformers is not available. Make sure it is installed correctly"
             )
+    quit()
 
     to_tensor = transforms.ToTensor()
     img_name = os.path.basename(img_path).split(".")[0]
-    normal_folder = "reference_images_freeview_smpl/"
-    nerf_folder = "reference_images_freeview_nerf/"
+    normal_folder = cfg.normal_map_folder
+    nerf_folder = cfg.gs_render_folder
     all_subjects = [img_name]
 
     for subject in all_subjects:
@@ -272,18 +283,4 @@ def main(cfg, img_path):
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="./configs/inference.yaml")
-    parser.add_argument("--img_path", type=str, default="./")
-    args = parser.parse_args()
-
-    if args.config[-5:] == ".yaml":
-        cfg = OmegaConf.load(args.config)
-    else:
-        raise ValueError("Do not support this format config file")
-
-    main(cfg, args.img_path)
-
-
-
+    main()
