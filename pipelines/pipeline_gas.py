@@ -530,12 +530,14 @@ class GASPipeline(DiffusionPipeline):
         # Calculate the halfway point
         if task == "mv":
             halfway = num_frames // 2
+            first_halfway_count = halfway + 1
+            second_halfway_count = num_frames - halfway
 
             # Create the increasing scale for the first half
-            increasing_scale = torch.linspace(min_guidance_scale, max_guidance_scale, halfway + 1)
+            increasing_scale = torch.linspace(min_guidance_scale, max_guidance_scale, first_halfway_count)
 
             # Create the decreasing scale for the second half
-            decreasing_scale = torch.linspace(max_guidance_scale, min_guidance_scale, num_frames - halfway)
+            decreasing_scale = torch.linspace(max_guidance_scale, min_guidance_scale, second_halfway_count)
 
             # Concatenate the increasing and decreasing scales
             guidance_scale = torch.cat((increasing_scale, decreasing_scale[1:10]))

@@ -26,7 +26,7 @@ from torchvision import transforms
 from diffusers import AutoencoderKLTemporalDecoder
 from diffusers.utils.import_utils import is_xformers_available
 from omegaconf import OmegaConf
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from transformers import CLIPVisionModelWithProjection
 import imageio
 from einops import rearrange
@@ -145,7 +145,46 @@ def inference(
 
     return _video_frames
     
-    
+def add_bottom_right_label(img: Image.Image, text: str) -> Image.Image:
+    """
+    Draws a text label in the bottom-right corner of a PIL image,
+    with a white background and black text.
+    Returns a modified copy of the image.
+    """
+    img = img.copy()
+    draw = ImageDraw.Draw(img)
+
+    # Choose a font (fallback if not available)
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", size=16)
+    except:
+        font = ImageFont.load_default()
+
+    # Measure text box
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    # Padding
+    pad = 6
+
+    # Image dimensions
+    W, H = img.size
+
+    # Bottom-right placement
+    x = W - text_w - 2 * pad
+    y = H - text_h - 2 * pad
+
+    # Background rectangle (white)
+    draw.rectangle(
+        [x, y, x + text_w + 2 * pad, y + text_h + 2 * pad],
+        fill="white"
+    )
+
+    # Text (black)
+    draw.text((x + pad, y + pad), text, fill="black", font=font)
+
+    return img
 
 @hydra.main(config_path="configs/inference", config_name="novel_views", version_base=None)
 def main(cfg):
@@ -240,8 +279,8 @@ def main(cfg):
         nerf_vidpil_lst.append(to_tensor(nerf_img))
 
 
-    smpl_vid = torch.stack(smpl_vidpil_lst, dim=0)
-    nerf_vid = torch.stack(nerf_vidpil_lst, dim=0)
+    smpl_vid = torch.stack(smpl_vidpil_lst, dim=0) # F,C,H,W
+    nerf_vid = torch.stack(nerf_vidpil_lst, dim=0) # F,C,H,W
     obs_image_path = gs_dir / f'cam_0/{cfg.frame_number:04d}.png'
     obs_img_pil = Image.open(obs_image_path)
 
@@ -258,20 +297,37 @@ def main(cfg):
         height=cfg.height,
         device="cuda",
         dtype=weight_dtype,
-    )
+    ) # F,C,H,W
 
-    result_video_tensor = result_video_tensor[None, ...]
-    result_video_tensor = rearrange(result_video_tensor, 'b f c h w -> b c f h w')
+    for f_idx in range(result_video_tensor.shape[0]):
+        generated_frame = result_video_tensor[f_idx]
+        normal_frame_in = smpl_vid[f_idx]
+        rgb_frame_in = nerf_vid[f_idx]
 
-    obs_video_tensor = to_tensor(obs_img_pil)[None, :, None, ...].repeat(
-        1, 1, video_length, 1, 1
-    )
+        # Convert tensors to PIL Images
+        generated_frame_pil = transforms.ToPILImage()(generated_frame.clamp(0, 1))
+        normal_frame_pil = transforms.ToPILImage()(normal_frame_in.clamp(0, 1))
+        rgb_frame_pil = transforms.ToPILImage()(rgb_frame_in.clamp(0, 1))
 
+        # Add labels to each frame
+        obs_img_pil = add_bottom_right_label(obs_img_pil, "Reference Image")
+        normal_frame_pil = add_bottom_right_label(normal_frame_pil, "SMPL Normal Map")
+        rgb_frame_pil = add_bottom_right_label(rgb_frame_pil, "GS Rendering")
+        generated_frame_pil = add_bottom_right_label(generated_frame_pil, "Generated Frame")
 
-    grid_video = torch.cat([obs_video_tensor, result_video_tensor], dim=0)
-    save_videos_grid(grid_video, osp.join(save_dir, f"{cfg.frame_number:04d}.mp4"), fps=10)
-        
-    logging.info(f"Inference completed, results saved in {save_dir}")
+        # Create a combined frame
+        combined_width = generated_frame_pil.width * 4
+        combined_height = generated_frame_pil.height
+        combined_frame = Image.new('RGB', (combined_width, combined_height))
+        combined_frame.paste(obs_img_pil, (0, 0))
+        combined_frame.paste(normal_frame_pil, (generated_frame_pil.width, 0))
+        combined_frame.paste(rgb_frame_pil, (generated_frame_pil.width * 2, 0))
+        combined_frame.paste(generated_frame_pil, (generated_frame_pil.width * 3, 0))
+
+        # Save the combined frame
+        combined_frame.save(os.path.join(save_dir, f'cam_{f_idx:04d}.png'))
+
+    print(f"Inference finished. Results are saved to {save_dir}")
 
 
 if __name__ == "__main__":
