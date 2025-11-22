@@ -2,8 +2,8 @@
 
 frame_number: ???
 exp_name: taichi
-width: 960
-height: 540
+width: 512
+height: 512
 
 
 video_length: 7

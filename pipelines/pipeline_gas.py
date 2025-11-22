@@ -535,7 +535,7 @@ class GASPipeline(DiffusionPipeline):
             increasing_scale = torch.linspace(min_guidance_scale, max_guidance_scale, halfway + 1)
 
             # Create the decreasing scale for the second half
-            decreasing_scale = torch.linspace(max_guidance_scale, min_guidance_scale, num_frames - halfway + 1)
+            decreasing_scale = torch.linspace(max_guidance_scale, min_guidance_scale, num_frames - halfway)
 
             # Concatenate the increasing and decreasing scales
             guidance_scale = torch.cat((increasing_scale, decreasing_scale[1:10]))
@@ -620,7 +620,7 @@ class GASPipeline(DiffusionPipeline):
 
                 # perform guidance
                 if self.do_classifier_free_guidance:
-                    noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
+                    noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)  
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_cond - noise_pred_uncond)
 
                 # compute the previous noisy sample x_t -> x_t-1
