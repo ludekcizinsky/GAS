@@ -6,8 +6,7 @@ width: 960
 height: 540
 
 
-data:
-  video_length: 4
+video_length: 7
 
 
 seed: 42

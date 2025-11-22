@@ -1,3 +1,8 @@
+"""
+Usage: 
+    python inference_novel_views.py frame_number=0
+"""
+
 import warnings
 import logging
 import os
@@ -216,12 +221,13 @@ def main(cfg):
 
     to_tensor = transforms.ToTensor()
     normal_dir = Path(cfg.normal_map_folder)
-    nerf_dir = Path(cfg.gs_render_folder)
+    gs_dir = Path(cfg.gs_render_folder)
 
     smpl_vidpil_lst = []
     nerf_vidpil_lst = []
 
-    for cam_name in tqdm(range(1, cfg.data.video_length + 1), desc="Loading input frames", total=cfg.data.video_length):
+    video_length = cfg.video_length
+    for cam_name in tqdm(range(1, video_length + 1), desc="Loading input frames", total=video_length):
         # SMPL normal condition
         cam_name = f"cam_{cam_name}"
         smpl_image_path = normal_dir / cam_name / f'{cfg.frame_number:04d}.png'
@@ -229,14 +235,15 @@ def main(cfg):
         smpl_vidpil_lst.append(to_tensor(smpl_img_pil))
 
         # NeRF rendering condition
-        nerf_img_path = nerf_dir / cam_name / f'{cfg.frame_number:04d}.png'
+        nerf_img_path = gs_dir / cam_name / f'{cfg.frame_number:04d}.png'
         nerf_img = Image.open(nerf_img_path)
         nerf_vidpil_lst.append(to_tensor(nerf_img))
 
 
-    video_length = cfg.data.video_length
     smpl_vid = torch.stack(smpl_vidpil_lst, dim=0)
     nerf_vid = torch.stack(nerf_vidpil_lst, dim=0)
+    obs_image_path = gs_dir / f'cam_0/{cfg.frame_number:04d}.png'
+    obs_img_pil = Image.open(obs_image_path)
 
     result_video_tensor = inference(
         cfg=cfg,
@@ -245,7 +252,7 @@ def main(cfg):
         model=model,
         smpl_vidpil_lst=smpl_vid,
         nerf_vidpil_lst=nerf_vid,
-        obs_img=..., # TODO: this - provide the original frame as reference or should i provide all gt frames?
+        obs_img=obs_img_pil,
         video_length=video_length,
         width=cfg.width,
         height=cfg.height,
@@ -262,7 +269,7 @@ def main(cfg):
 
 
     grid_video = torch.cat([obs_video_tensor, result_video_tensor], dim=0)
-    save_videos_grid(grid_video, osp.join(save_dir, f"subject_{subject}_grid.mp4"), fps=12)
+    save_videos_grid(grid_video, osp.join(save_dir, f"{cfg.frame_number:04d}.mp4"), fps=10)
         
     logging.info(f"Inference completed, results saved in {save_dir}")
 
